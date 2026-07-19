@@ -287,11 +287,11 @@ if [[ -n "$LANG_FLAG" ]]; then
     echo "$LANG_CHOICE" > "$CONFIG_FILE"
 elif [[ "$LANG_CHOICE" != "en" && "$LANG_CHOICE" != "ru" ]]; then
     LANG_CHOICE=$(printf "en\tEnglish\nru\tРусский\n" | \
-        fzf --height 30% --border --layout=reverse \
+        fzf --exact --height 30% --border --layout=reverse \
             --delimiter=$'\t' --with-nth=2 \
             --prompt="Language / Язык> " \
             --header="Choose your language / Выберите язык" | \
-        cut -f1)
+        cut -f1) || true
     [[ -z "$LANG_CHOICE" ]] && LANG_CHOICE="en"
     mkdir -p "$CONFIG_DIR"
     echo "$LANG_CHOICE" > "$CONFIG_FILE"
@@ -333,6 +333,7 @@ cleanup() {
     [[ -n "$META_FILE" && -f "$META_FILE" ]] && rm -f "$META_FILE"
     [[ -n "$STATE_FILE" && -f "$STATE_FILE" ]] && rm -f "$STATE_FILE"
     [[ -n "$HELPER_SCRIPT" && -f "$HELPER_SCRIPT" ]] && rm -f "$HELPER_SCRIPT"
+    return 0
 }
 trap cleanup EXIT
 
@@ -385,7 +386,15 @@ build_meta() {
     echo "$tmp"
 }
 
-while true; do
+# Навигация:
+#   - Esc в списке пакетов (любой из 5 источников)  -> назад к "Select a package source"
+#     (для запуска с флагом типа --installed возврата нет, там сразу выход)
+#   - Esc в меню действий (Install/Update/...)       -> назад к списку пакетов, с которого пришли
+#
+# Из-за `set -euo pipefail` пайплайны с fzf нужно завершать через `|| true`,
+# иначе pipefail отдаёт код выхода fzf (130 при Esc) и errexit убивает скрипт.
+
+while true; do  # внешний цикл: выбор источника
     if [[ -z "$FLAG_MODE" ]]; then
         SOURCE_LINES=""
         if [[ -n "$AUR_HELPER" ]]; then
@@ -404,147 +413,156 @@ while true; do
                 --delimiter=$'\t' --with-nth=2 \
                 --prompt="$(t source_prompt)" \
                 --header="$(t select_source)" | \
-            cut -f1)
+            cut -f1) || true
         [[ -z "$MODE" ]] && exit 0
     else
         MODE="$FLAG_MODE"
     fi
 
-    [[ -n "$META_FILE" && -f "$META_FILE" ]] && rm -f "$META_FILE"
-    [[ -n "$STATE_FILE" && -f "$STATE_FILE" ]] && rm -f "$STATE_FILE"
-    [[ -n "$HELPER_SCRIPT" && -f "$HELPER_SCRIPT" ]] && rm -f "$HELPER_SCRIPT"
-    META_FILE=""
-    STATE_FILE=""
-    HELPER_SCRIPT=""
+    while true; do  # внутренний цикл: список пакетов <-> меню действий
+        [[ -n "$META_FILE" && -f "$META_FILE" ]] && rm -f "$META_FILE"
+        [[ -n "$STATE_FILE" && -f "$STATE_FILE" ]] && rm -f "$STATE_FILE"
+        [[ -n "$HELPER_SCRIPT" && -f "$HELPER_SCRIPT" ]] && rm -f "$HELPER_SCRIPT"
+        META_FILE=""
+        STATE_FILE=""
+        HELPER_SCRIPT=""
 
-    clear
+        clear
 
-    case "$MODE" in
-        aur)
-            SELECTED=$("$AUR_HELPER" -Sl aur | awk '{print $1, $2}' | \
-                fzf "${FZF_COMMON_OPTS[@]}" \
-                    --preview "$AUR_HELPER -Si \$(echo {} | cut -d' ' -f2)" | \
-                awk '{print $2}')
-            ;;
-        official)
-            SELECTED=$(pacman -Sl | awk '{print $1, $2}' | \
-                fzf "${FZF_COMMON_OPTS[@]}" \
-                    --preview "pacman -Si \$(echo {} | cut -d' ' -f2)" | \
-                awk '{print $2}')
-            ;;
-        all)
-            SELECTED=$("$AUR_HELPER" -Sl | awk '{print $1, $2}' | \
-                fzf "${FZF_COMMON_OPTS[@]}" \
-                    --preview "$AUR_HELPER -Si \$(echo {} | cut -d' ' -f2)" | \
-                awk '{print $2}')
-            ;;
-        installed|aur-installed)
-            if [[ "$MODE" == "aur-installed" ]]; then
-                META_FILE=$(build_meta "yes")
-            else
-                META_FILE=$(build_meta "no")
-            fi
-            STATE_FILE=$(mktemp)
-            echo "name:asc" > "$STATE_FILE"
-
-            HELPER_SCRIPT=$(mktemp /tmp/pkgpick_helper.XXXXXX)
-            cp "$SELF" "$HELPER_SCRIPT"
-            chmod +x "$HELPER_SCRIPT"
-
-            SELECTED=$(sort -t $'\t' -k1,1 "$META_FILE" | cut -f1 | \
-                fzf "${FZF_COMMON_OPTS[@]}" \
-                    --preview 'pacman -Qi {}' \
-                    --header "$("$HELPER_SCRIPT" __header "$STATE_FILE")" \
-                    --bind "ctrl-n:reload($HELPER_SCRIPT __sort name \"$META_FILE\" \"$STATE_FILE\")+transform-header($HELPER_SCRIPT __header \"$STATE_FILE\")" \
-                    --bind "ctrl-s:reload($HELPER_SCRIPT __sort size \"$META_FILE\" \"$STATE_FILE\")+transform-header($HELPER_SCRIPT __header \"$STATE_FILE\")" \
-                    --bind "ctrl-t:reload($HELPER_SCRIPT __sort date \"$META_FILE\" \"$STATE_FILE\")+transform-header($HELPER_SCRIPT __header \"$STATE_FILE\")" \
-                    --bind "ctrl-e:reload($HELPER_SCRIPT __sort explicit \"$META_FILE\" \"$STATE_FILE\")+transform-header($HELPER_SCRIPT __header \"$STATE_FILE\")" \
-                    --bind "ctrl-d:reload($HELPER_SCRIPT __sort dependency \"$META_FILE\" \"$STATE_FILE\")+transform-header($HELPER_SCRIPT __header \"$STATE_FILE\")")
-            ;;
-        *)
-            echo "$(t invalid_mode) $MODE" >&2
-            exit 1
-            ;;
-    esac
-
-    if [[ -n "${SELECTED// }" ]]; then
-        break
-    fi
-
-    if [[ -n "$FLAG_MODE" ]]; then
-        echo "$(t nothing_selected)"
-        exit 0
-    fi
-done
-
-SELECTED_COUNT=$(echo "$SELECTED" | grep -c .)
-
-echo "$(t selected_label) ($SELECTED_COUNT):"
-echo "$SELECTED" | sed 's/^/  - /'
-echo
-
-ACTION_LINES=""
-if [[ "$MODE" == "installed" || "$MODE" == "aur-installed" ]]; then
-    ACTION_LINES+="update"$'\t'"$(t act_update)"$'\n'
-    ACTION_LINES+="remove"$'\t'"$(t act_remove)"$'\n'
-    ACTION_LINES+="info"$'\t'"$(t act_info)"$'\n'
-else
-    ACTION_LINES+="install"$'\t'"$(t act_install)"$'\n'
-    ACTION_LINES+="info"$'\t'"$(t act_info)"$'\n'
-fi
-
-ACTION=$(printf '%s' "$ACTION_LINES" | \
-    fzf --exact --height 30% --border --layout=reverse \
-        --delimiter=$'\t' --with-nth=2 \
-        --prompt="$(t action_prompt)" \
-        --header="$(t action_header)" | \
-    cut -f1)
-
-[[ -z "$ACTION" ]] && exit 0
-
-case "$ACTION" in
-    install)
-        if [[ -n "$AUR_HELPER" ]]; then
-            echo "$SELECTED" | xargs -o -r "$AUR_HELPER" -S --needed
-        else
-            echo "$SELECTED" | xargs -o -r sudo pacman -S --needed
-        fi
-        ;;
-    update)
-        if [[ -n "$AUR_HELPER" ]]; then
-            echo "$SELECTED" | xargs -o -r "$AUR_HELPER" -S
-        else
-            echo "$SELECTED" | xargs -o -r sudo pacman -S
-        fi
-        ;;
-    remove)
-        read -r -p "$(t remove_confirm) $SELECTED_COUNT $(t remove_confirm_suffix) " confirm
-        case "$confirm" in
-            y|Y|yes|Yes|д|Д|да|Да)
-                if [[ -n "$AUR_HELPER" ]]; then
-                    echo "$SELECTED" | xargs -o -r "$AUR_HELPER" -Rns
+        case "$MODE" in
+            aur)
+                SELECTED=$("$AUR_HELPER" -Sl aur | awk '{print $1, $2}' | \
+                    fzf "${FZF_COMMON_OPTS[@]}" \
+                        --preview "$AUR_HELPER -Si \$(echo {} | cut -d' ' -f2)" | \
+                    awk '{print $2}') || true
+                ;;
+            official)
+                SELECTED=$(pacman -Sl | awk '{print $1, $2}' | \
+                    fzf "${FZF_COMMON_OPTS[@]}" \
+                        --preview "pacman -Si \$(echo {} | cut -d' ' -f2)" | \
+                    awk '{print $2}') || true
+                ;;
+            all)
+                SELECTED=$("$AUR_HELPER" -Sl | awk '{print $1, $2}' | \
+                    fzf "${FZF_COMMON_OPTS[@]}" \
+                        --preview "$AUR_HELPER -Si \$(echo {} | cut -d' ' -f2)" | \
+                    awk '{print $2}') || true
+                ;;
+            installed|aur-installed)
+                if [[ "$MODE" == "aur-installed" ]]; then
+                    META_FILE=$(build_meta "yes")
                 else
-                    echo "$SELECTED" | xargs -o -r sudo pacman -Rns
+                    META_FILE=$(build_meta "no")
                 fi
+                STATE_FILE=$(mktemp)
+                echo "name:asc" > "$STATE_FILE"
+
+                HELPER_SCRIPT=$(mktemp /tmp/pkgpick_helper.XXXXXX)
+                cp "$SELF" "$HELPER_SCRIPT"
+                chmod +x "$HELPER_SCRIPT"
+
+                SELECTED=$(sort -t $'\t' -k1,1 "$META_FILE" | cut -f1 | \
+                    fzf "${FZF_COMMON_OPTS[@]}" \
+                        --preview 'pacman -Qi {}' \
+                        --header "$("$HELPER_SCRIPT" __header "$STATE_FILE")" \
+                        --bind "ctrl-n:reload($HELPER_SCRIPT __sort name \"$META_FILE\" \"$STATE_FILE\")+transform-header($HELPER_SCRIPT __header \"$STATE_FILE\")" \
+                        --bind "ctrl-s:reload($HELPER_SCRIPT __sort size \"$META_FILE\" \"$STATE_FILE\")+transform-header($HELPER_SCRIPT __header \"$STATE_FILE\")" \
+                        --bind "ctrl-t:reload($HELPER_SCRIPT __sort date \"$META_FILE\" \"$STATE_FILE\")+transform-header($HELPER_SCRIPT __header \"$STATE_FILE\")" \
+                        --bind "ctrl-e:reload($HELPER_SCRIPT __sort explicit \"$META_FILE\" \"$STATE_FILE\")+transform-header($HELPER_SCRIPT __header \"$STATE_FILE\")" \
+                        --bind "ctrl-d:reload($HELPER_SCRIPT __sort dependency \"$META_FILE\" \"$STATE_FILE\")+transform-header($HELPER_SCRIPT __header \"$STATE_FILE\")") || true
                 ;;
             *)
-                echo "$(t cancelled)"
+                echo "$(t invalid_mode) $MODE" >&2
+                exit 1
                 ;;
         esac
-        ;;
-    info)
-        for pkg in $SELECTED; do
-            echo "=== $pkg ==="
-            if [[ -n "$AUR_HELPER" ]]; then
-                "$AUR_HELPER" -Si "$pkg" 2>/dev/null || "$AUR_HELPER" -Qi "$pkg" 2>/dev/null
+
+        if [[ -z "${SELECTED// }" ]]; then
+            # Esc в списке пакетов
+            if [[ -n "$FLAG_MODE" ]]; then
+                echo "$(t nothing_selected)"
+                exit 0
             else
-                pacman -Si "$pkg" 2>/dev/null || pacman -Qi "$pkg" 2>/dev/null
+                continue 2  # назад к выбору источника
             fi
-            echo
-        done
-        ;;
-    *)
-        echo "$(t invalid_action) $ACTION" >&2
-        exit 1
-        ;;
-esac
+        fi
+
+        SELECTED_COUNT=$(echo "$SELECTED" | grep -c .)
+
+        clear
+        echo "$(t selected_label) ($SELECTED_COUNT):"
+        echo "$SELECTED" | sed 's/^/  - /'
+        echo
+
+        ACTION_LINES=""
+        if [[ "$MODE" == "installed" || "$MODE" == "aur-installed" ]]; then
+            ACTION_LINES+="update"$'\t'"$(t act_update)"$'\n'
+            ACTION_LINES+="remove"$'\t'"$(t act_remove)"$'\n'
+            ACTION_LINES+="info"$'\t'"$(t act_info)"$'\n'
+        else
+            ACTION_LINES+="install"$'\t'"$(t act_install)"$'\n'
+            ACTION_LINES+="info"$'\t'"$(t act_info)"$'\n'
+        fi
+
+        ACTION=$(printf '%s' "$ACTION_LINES" | \
+            fzf --exact --height 30% --border --layout=reverse \
+                --delimiter=$'\t' --with-nth=2 \
+                --prompt="$(t action_prompt)" \
+                --header="$(t action_header)" | \
+            cut -f1) || true
+
+        if [[ -z "$ACTION" ]]; then
+            # Esc в меню действий -> назад к списку пакетов (тот же источник)
+            continue
+        fi
+
+        case "$ACTION" in
+            install)
+                if [[ -n "$AUR_HELPER" ]]; then
+                    echo "$SELECTED" | xargs -o -r "$AUR_HELPER" -S --needed
+                else
+                    echo "$SELECTED" | xargs -o -r sudo pacman -S --needed
+                fi
+                ;;
+            update)
+                if [[ -n "$AUR_HELPER" ]]; then
+                    echo "$SELECTED" | xargs -o -r "$AUR_HELPER" -S
+                else
+                    echo "$SELECTED" | xargs -o -r sudo pacman -S
+                fi
+                ;;
+            remove)
+                read -r -p "$(t remove_confirm) $SELECTED_COUNT $(t remove_confirm_suffix) " confirm
+                case "$confirm" in
+                    y|Y|yes|Yes|д|Д|да|Да)
+                        if [[ -n "$AUR_HELPER" ]]; then
+                            echo "$SELECTED" | xargs -o -r "$AUR_HELPER" -Rns
+                        else
+                            echo "$SELECTED" | xargs -o -r sudo pacman -Rns
+                        fi
+                        ;;
+                    *)
+                        echo "$(t cancelled)"
+                        ;;
+                esac
+                ;;
+            info)
+                for pkg in $SELECTED; do
+                    echo "=== $pkg ==="
+                    if [[ -n "$AUR_HELPER" ]]; then
+                        "$AUR_HELPER" -Si "$pkg" 2>/dev/null || "$AUR_HELPER" -Qi "$pkg" 2>/dev/null
+                    else
+                        pacman -Si "$pkg" 2>/dev/null || pacman -Qi "$pkg" 2>/dev/null
+                    fi
+                    echo
+                done
+                ;;
+            *)
+                echo "$(t invalid_action) $ACTION" >&2
+                exit 1
+                ;;
+        esac
+
+        exit 0
+    done
+done
