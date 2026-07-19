@@ -318,6 +318,7 @@ FLAG_MODE="$MODE"
 
 FZF_COMMON_OPTS=(
     --multi
+    --exact
     --height 100%
     --border
     --layout=reverse
@@ -399,7 +400,7 @@ while true; do
             SOURCE_LINES+="aur-installed"$'\t'"$(t lbl_aur_installed)"$'\n'
         fi
         MODE=$(printf '%s' "$SOURCE_LINES" | \
-            fzf --height 100% --border --layout=reverse \
+            fzf --exact --height 100% --border --layout=reverse \
                 --delimiter=$'\t' --with-nth=2 \
                 --prompt="$(t source_prompt)" \
                 --header="$(t select_source)" | \
@@ -493,7 +494,7 @@ else
 fi
 
 ACTION=$(printf '%s' "$ACTION_LINES" | \
-    fzf --height 30% --border --layout=reverse \
+    fzf --exact --height 30% --border --layout=reverse \
         --delimiter=$'\t' --with-nth=2 \
         --prompt="$(t action_prompt)" \
         --header="$(t action_header)" | \
