@@ -1556,6 +1556,7 @@ while true; do  # внешний цикл: выбор источника
                     go-installed)       UPDATE_ALL_LABEL_KEY="act_update_all_go" ;;
                     pipx-installed)     UPDATE_ALL_LABEL_KEY="act_update_all_pipx" ;;
                 esac
+                ACTION_LINES+="__separator__"$'\t'""$'\n'
                 ACTION_LINES+="update_all"$'\t'"$(t "$UPDATE_ALL_LABEL_KEY")$UPDATE_ALL_LABEL_SUFFIX"$'\n'
             fi
         else
@@ -1563,13 +1564,16 @@ while true; do  # внешний цикл: выбор источника
             ACTION_LINES+="info"$'\t'"$(t act_info)"$'\n'
         fi
 
-        ACTION=$(printf '%s' "$ACTION_LINES" | \
-            fzf --exact --height 100% --border --layout=reverse --no-input \
-                --bind "$NOSEARCH_NAV_BIND" \
-                --delimiter=$'\t' --with-nth=2 \
-                --prompt="$(t action_prompt)" \
-                --header="$(t action_header)" | \
-            cut -f1) || true
+        while true; do
+            ACTION=$(printf '%s' "$ACTION_LINES" | \
+                fzf --exact --height 100% --border --layout=reverse --no-input \
+                    --bind "$NOSEARCH_NAV_BIND" \
+                    --delimiter=$'\t' --with-nth=2 \
+                    --prompt="$(t action_prompt)" \
+                    --header="$(t action_header)" | \
+                cut -f1) || true
+            [[ "$ACTION" == "__separator__" ]] || break
+        done
 
         if [[ -z "$ACTION" ]]; then
             # Esc в меню действий -> назад к списку пакетов (тот же источник)
@@ -1768,6 +1772,7 @@ while true; do  # внешний цикл: выбор источника
                     echo
                 done <<< "$SELECTED"
                 press_enter_or_esc
+                continue
                 ;;
             *)
                 echo "$(t invalid_action) $ACTION" >&2
