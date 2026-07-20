@@ -7,6 +7,13 @@ command -v fzf >/dev/null 2>&1 || { echo "fzf not found in PATH" >&2; exit 1; }
 
 CONFIG_DIR="$HOME/.config/pkgpick"
 CONFIG_FILE="$CONFIG_DIR/lang"
+CONFIG_FULL_FILE="$CONFIG_DIR/full_sources"
+
+# Общие бинды для меню без поиска (--no-input): раз печатать в fzf нельзя,
+# стрелки и vim h/j/k/l свободны — не конфликтуют с редактированием строки
+# фильтра, как в списках пакетов. right/l = выбрать, left/h = назад,
+# j = вниз, k = вверх (up/down и так работают по умолчанию в fzf).
+NOSEARCH_NAV_BIND='right:accept,left:abort,l:accept,h:abort,j:down,k:up'
 
 declare -A EN=(
     [select_source]="Select a package source"
@@ -23,6 +30,14 @@ declare -A EN=(
     [lbl_cargo_installed]="Installed cargo packages"
     [lbl_go_installed]="Installed go packages"
     [lbl_all_installed]="All installed packages (everywhere)"
+    [lbl_pipx_installed]="Installed pipx packages"
+    [lbl_cleanup]="Cleanup (caches, orphans, unused files)"
+    [lbl_settings]="Settings"
+    [settings_header]="Settings"
+    [settings_language]="Language"
+    [settings_full_sources]="Show all sources (npm/pip/cargo/go/pipx)"
+    [settings_on]="ON"
+    [settings_off]="OFF"
     [sort_prefix]="Sort:"
     [sort_name]="Name"
     [sort_size]="Size"
@@ -41,6 +56,7 @@ declare -A EN=(
     [pip_missing]="pip/pip3 not found in PATH; this mode needs it."
     [cargo_missing]="cargo not found in PATH; this mode needs it."
     [go_missing]="go not found in PATH; this mode needs it."
+    [pipx_missing]="pipx not found in PATH; this mode needs it."
     [invalid_mode]="Invalid mode:"
     [nothing_selected]="Nothing selected."
     [selected_label]="Selected"
@@ -56,12 +72,26 @@ declare -A EN=(
     [act_update_all_pip]="Fully update all outdated pip packages"
     [act_update_all_cargo]="Fully reinstall/update all cargo packages"
     [act_update_all_go]="Fully update all go-installed binaries"
+    [act_update_all_pipx]="Fully update all pipx packages"
     [act_remove]="Remove"
     [act_info]="Info"
     [remove_confirm]="Remove"
-    [remove_confirm_suffix]="package(s)? [y/N]"
+    [remove_confirm_suffix]="package(s)? [Y/n]"
     [cancelled]="Cancelled."
     [invalid_action]="Invalid action:"
+    [cleanup_header]="What do you want to clean up?"
+    [cleanup_confirm_suffix]="Proceed? [Y/n]"
+    [cleanup_nothing]="Nothing to clean up here."
+    [cleanup_failed]="Command failed — nothing may have been cleaned."
+    [press_enter]="Press Enter (or any key) to continue..."
+    [cleanup_pacman_cache]="Package cache (pacman)"
+    [cleanup_orphans]="Orphaned packages (installed as deps, no longer needed)"
+    [cleanup_aur_cache]="AUR helper build cache"
+    [cleanup_flatpak_unused]="Unused Flatpak runtimes"
+    [cleanup_npm_cache]="npm cache"
+    [cleanup_pip_cache]="pip cache"
+    [cleanup_cargo_cache]="cargo registry cache"
+    [cleanup_go_cache]="go build cache"
 )
 
 declare -A RU=(
@@ -79,6 +109,14 @@ declare -A RU=(
     [lbl_cargo_installed]="Установленные cargo-пакеты"
     [lbl_go_installed]="Установленные go-пакеты"
     [lbl_all_installed]="Все установленные пакеты (везде)"
+    [lbl_pipx_installed]="Установленные pipx-пакеты"
+    [lbl_cleanup]="Очистка (кеши, orphan-пакеты, неиспользуемое)"
+    [lbl_settings]="Настройки"
+    [settings_header]="Настройки"
+    [settings_language]="Язык"
+    [settings_full_sources]="Показывать все источники (npm/pip/cargo/go/pipx)"
+    [settings_on]="ВКЛ"
+    [settings_off]="ВЫКЛ"
     [sort_prefix]="Сортировка:"
     [sort_name]="Имя"
     [sort_size]="Размер"
@@ -97,6 +135,7 @@ declare -A RU=(
     [pip_missing]="Не найден pip/pip3 в PATH; этот режим требует его."
     [cargo_missing]="Не найден cargo в PATH; этот режим требует его."
     [go_missing]="Не найден go в PATH; этот режим требует его."
+    [pipx_missing]="Не найден pipx в PATH; этот режим требует его."
     [invalid_mode]="Некорректный режим:"
     [nothing_selected]="Ничего не выбрано."
     [selected_label]="Выбрано"
@@ -112,12 +151,26 @@ declare -A RU=(
     [act_update_all_pip]="Обновить все устаревшие pip-пакеты"
     [act_update_all_cargo]="Переустановить/обновить все cargo-пакеты"
     [act_update_all_go]="Обновить все go-установленные бинарники"
+    [act_update_all_pipx]="Обновить полностью все pipx-пакеты"
     [act_remove]="Удалить"
     [act_info]="Инфо"
     [remove_confirm]="Удалить"
-    [remove_confirm_suffix]="пакет(ов)? [y/N]"
+    [remove_confirm_suffix]="пакет(ов)? [Y/n]"
     [cancelled]="Отменено."
     [invalid_action]="Некорректное действие:"
+    [cleanup_header]="Что почистить?"
+    [cleanup_confirm_suffix]="Продолжить? [Y/n]"
+    [cleanup_nothing]="Тут нечего чистить."
+    [cleanup_failed]="Команда завершилась с ошибкой — возможно, ничего не почистилось."
+    [press_enter]="Нажми Enter (или любую клавишу), чтобы продолжить..."
+    [cleanup_pacman_cache]="Кеш пакетов (pacman)"
+    [cleanup_orphans]="Пакеты-сироты (стояли как зависимость, больше не нужны)"
+    [cleanup_aur_cache]="Кеш сборки AUR-хелпера"
+    [cleanup_flatpak_unused]="Неиспользуемые flatpak-runtime'ы"
+    [cleanup_npm_cache]="Кеш npm"
+    [cleanup_pip_cache]="Кеш pip"
+    [cleanup_cargo_cache]="Кеш реестра cargo"
+    [cleanup_go_cache]="Кеш сборки go"
 )
 
 LANG_CHOICE=""
@@ -391,6 +444,9 @@ if [[ "${1:-}" == "__all_info" ]]; then
             [[ -z "$gobin" ]] && gobin="$(go env GOPATH 2>/dev/null)/bin"
             go version -m "$gobin/$id" 2>/dev/null || echo "No info available."
             ;;
+        pipx)
+            "$SELF" __pipx_info "$id"
+            ;;
         *)
             echo "No info available."
             ;;
@@ -404,6 +460,21 @@ if [[ "${1:-}" == "__cargo_info" ]]; then
         $0 ~ "^" pkg " " { show=1; print; next }
         show && /^[ \t]/ { print; next }
         show { exit }
+    '
+    exit 0
+fi
+
+if [[ "${1:-}" == "__pipx_info" ]]; then
+    pkg="${2:?}"
+    # `pipx list` blocks look like:
+    #    package black 23.3.0, installed using Python 3.11.4
+    #     - black
+    #     - blackd
+    pipx list 2>/dev/null | awk -v pkg="$pkg" '
+        $0 ~ "^[ \t]*package " pkg " " { show=1; print; next }
+        show && /^[ \t]*-/ { print; next }
+        show { exit }
+        END { if (!show) print "No info available." }
     '
     exit 0
 fi
@@ -444,7 +515,10 @@ cat <<EOF
   --pip-global        Установленные pip-пакеты (pip3/pip, если есть в PATH)
   --cargo-installed   Установленные через 'cargo install' бинарники
   --go-installed      Установленные через 'go install' бинарники (GOBIN/GOPATH/bin)
-  --all-installed     Все установленные пакеты сразу (pacman/AUR + flatpak + npm + pip + cargo + go)
+  --pipx-installed    Установленные через pipx пакеты
+  --all-installed     Все установленные пакеты сразу (pacman/AUR + flatpak + npm + pip + cargo + go + pipx)
+  --cleanup           Меню очистки: кеши пакетных менеджеров, orphan-пакеты, unused flatpak
+  --full              Показать npm/pip/cargo/go/pipx в меню один раз, не сохраняя (см. Настройки)
   --lang en|ru        Сменить язык интерфейса НАВСЕГДА (сохраняется в конфиг)
                       и продолжить с этим языком в текущем запуске
   -h, --help          Показать эту справку
@@ -490,6 +564,7 @@ cat <<EOF
 Если в PATH нет ни pip3, ни pip, режим --pip-global скрыт из меню и недоступен.
 Если в PATH нет cargo, режим --cargo-installed скрыт из меню и недоступен.
 Если в PATH нет go, режим --go-installed скрыт из меню и недоступен.
+Если в PATH нет pipx, режим --pipx-installed скрыт из меню и недоступен.
 Комбинированный --all-installed всегда доступен (использует pacman) и просто
 не включает в список те источники (flatpak/npm/pip/cargo/go), которых нет.
 EOF
@@ -513,7 +588,10 @@ Language config file: $CONFIG_FILE
   --pip-global        Installed pip packages (pip3/pip, whichever is in PATH)
   --cargo-installed   Binaries installed via 'cargo install'
   --go-installed      Binaries installed via 'go install' (GOBIN/GOPATH/bin)
-  --all-installed     Every installed package at once (pacman/AUR + flatpak + npm + pip + cargo + go)
+  --pipx-installed    Packages installed via pipx
+  --all-installed     Every installed package at once (pacman/AUR + flatpak + npm + pip + cargo + go + pipx)
+  --cleanup           Cleanup menu: package manager caches, orphaned packages, unused flatpak runtimes
+  --full              Show npm/pip/cargo/go/pipx in the menu for this run only, without saving (see Settings)
   --lang en|ru        Change UI language PERMANENTLY (saved to config)
                       and continue this run in that language
   -h, --help          Show this help
@@ -563,6 +641,7 @@ refused via the flag.
 If neither pip3 nor pip is found in PATH, --pip-global is hidden and refused.
 If cargo is not found in PATH, --cargo-installed is hidden and refused.
 If go is not found in PATH, --go-installed is hidden and refused.
+If pipx is not found in PATH, --pipx-installed is hidden and refused.
 The combined --all-installed mode is always available (it uses pacman) and
 simply omits whichever sources (flatpak/npm/pip/cargo/go) are not installed.
 EOF
@@ -577,9 +656,20 @@ if [[ -f "$CONFIG_FILE" ]]; then
 fi
 [[ "$LANG_CHOICE" != "en" && "$LANG_CHOICE" != "ru" ]] && LANG_CHOICE=""
 
+# ---- resolve persisted "show full source list" setting (npm/pip/cargo/go/pipx) ----
+# Off by default: the interactive source menu shows only pacman/AUR/flatpak by
+# default, to keep it short. Turned on permanently via the Settings menu, or
+# just for this run via --full. Direct flags like --npm-global always work
+# regardless of this setting, since they skip the menu entirely.
+SHOW_FULL=""
+if [[ -f "$CONFIG_FULL_FILE" && "$(cat "$CONFIG_FULL_FILE")" == "1" ]]; then
+    SHOW_FULL="1"
+fi
+
 # ---- parse CLI arguments ----
 MODE=""
 LANG_FLAG=""
+FULL_FLAG=""
 HELP_REQUESTED=0
 
 while [[ $# -gt 0 ]]; do
@@ -608,6 +698,9 @@ while [[ $# -gt 0 ]]; do
         --cargo-installed)     MODE="cargo-installed" ;;
         --go-installed)        MODE="go-installed" ;;
         --all-installed)       MODE="all-installed" ;;
+        --pipx-installed)      MODE="pipx-installed" ;;
+        --cleanup)              MODE="cleanup" ;;
+        --full)                 FULL_FLAG="1" ;;
         -h|--help)            HELP_REQUESTED=1 ;;
         *)
             echo "$(t unknown_option) $1" >&2
@@ -618,6 +711,9 @@ while [[ $# -gt 0 ]]; do
     shift
 done
 
+# ---- apply --full: transient override, does not touch the saved setting ----
+[[ -n "$FULL_FLAG" ]] && SHOW_FULL="1"
+
 # ---- finalize language: flag > saved config > interactive picker ----
 if [[ -n "$LANG_FLAG" ]]; then
     LANG_CHOICE="$LANG_FLAG"
@@ -627,7 +723,8 @@ elif [[ "$HELP_REQUESTED" -eq 1 ]]; then
     [[ "$LANG_CHOICE" != "en" && "$LANG_CHOICE" != "ru" ]] && LANG_CHOICE="en"
 elif [[ "$LANG_CHOICE" != "en" && "$LANG_CHOICE" != "ru" ]]; then
     LANG_CHOICE=$(printf "en\tEnglish\nru\tРусский\n" | \
-        fzf --exact --height 100% --border --layout=reverse \
+        fzf --exact --height 100% --border --layout=reverse --no-input \
+            --bind "$NOSEARCH_NAV_BIND" \
             --delimiter=$'\t' --with-nth=2 \
             --prompt="Language / Язык> " \
             --header="Choose your language / Выберите язык" | \
@@ -708,6 +805,16 @@ fi
 
 if [[ -z "$HAS_GO" && "$MODE" == "go-installed" ]]; then
     printf '%s\n' "$(t go_missing)" >&2
+    exit 1
+fi
+
+HAS_PIPX=""
+if command -v pipx >/dev/null 2>&1; then
+    HAS_PIPX="1"
+fi
+
+if [[ -z "$HAS_PIPX" && "$MODE" == "pipx-installed" ]]; then
+    printf '%s\n' "$(t pipx_missing)" >&2
     exit 1
 fi
 
@@ -923,13 +1030,193 @@ build_meta_all_installed() {
             awk '{ print "go:" $1 "\t" $1 "\t" "go" "\t" 0 }' >> "$tmp"
     fi
 
+    if [[ -n "$HAS_PIPX" ]]; then
+        pipx list --short 2>/dev/null | \
+            awk '{ print "pipx:" $1 "\t" $1 "\t" "pipx" "\t" 0 }' >> "$tmp"
+    fi
+
     echo "$tmp"
+}
+
+# ---- generic "press enter to continue" that also accepts Esc (or any key) ----
+press_enter_or_esc() {
+    read -rsn1 -p "$(t press_enter)" _ || true
+    echo
+}
+
+# ---- true if a directory exists and has at least one entry inside ----
+dir_has_content() {
+    [[ -d "$1" ]] && [[ -n "$(find "$1" -mindepth 1 -print -quit 2>/dev/null)" ]]
+}
+
+# ---- settings menu helpers ----
+lang_display_name() {
+    case "$1" in
+        ru) echo "Русский" ;;
+        *)  echo "English" ;;
+    esac
+}
+
+# Same picker as the startup one, but on Esc it leaves the current language
+# untouched instead of defaulting to English — startup and settings need
+# different "nothing chosen" behavior, so this isn't shared with the block above.
+settings_pick_language() {
+    local choice
+    choice=$(printf "en\tEnglish\nru\tРусский\n" | \
+        fzf --exact --height 100% --border --layout=reverse --no-input \
+            --bind "$NOSEARCH_NAV_BIND" \
+            --delimiter=$'\t' --with-nth=2 \
+            --prompt="Language / Язык> " \
+            --header="Choose your language / Выберите язык" | \
+        cut -f1) || true
+    if [[ -n "$choice" ]]; then
+        LANG_CHOICE="$choice"
+        mkdir -p "$CONFIG_DIR"
+        echo "$LANG_CHOICE" > "$CONFIG_FILE"
+    fi
+}
+
+toggle_full_sources() {
+    if [[ "$SHOW_FULL" == "1" ]]; then
+        SHOW_FULL=""
+    else
+        SHOW_FULL="1"
+    fi
+    mkdir -p "$CONFIG_DIR"
+    echo "${SHOW_FULL:-0}" > "$CONFIG_FULL_FILE"
+}
+
+# ---- cleanup mode: каждая функция показывает детали, спрашивает [y/N], выполняет ----
+# Возврат: 0 = было что показать/сделать (в вызывающем коде после этого пауза
+#          "нажми что-нибудь"), 1 = юзер отказался на confirm - тихо назад,
+#          без паузы.
+cleanup_confirm_and_run() {
+    # $1 = shell command to run on confirm (eval'd)
+    read -r -p "$(t cleanup_confirm_suffix) " confirm
+    case "$confirm" in
+        ""|y|Y|yes|Yes|д|Д|да|Да)
+            if ! eval "$1"; then
+                printf '%s\n' "$(t cleanup_failed)" >&2
+            fi
+            return 0
+            ;;
+        *)
+            return 1
+            ;;
+    esac
+}
+
+do_cleanup_pacman_cache() {
+    echo "== $(t cleanup_pacman_cache) =="
+    local cache_dir="/var/cache/pacman/pkg"
+    if ! dir_has_content "$cache_dir"; then
+        printf '%s\n' "$(t cleanup_nothing)"
+        return 0
+    fi
+    local size
+    size=$(du -sh "$cache_dir" 2>/dev/null | cut -f1)
+    echo "$cache_dir: $size"
+    cleanup_confirm_and_run 'sudo pacman -Sc --noconfirm'
+}
+
+do_cleanup_orphans() {
+    echo "== $(t cleanup_orphans) =="
+    local orphans count
+    orphans=$(pacman -Qtdq 2>/dev/null || true)
+    if [[ -z "$orphans" ]]; then
+        printf '%s\n' "$(t cleanup_nothing)"
+        return 0
+    fi
+    echo "$orphans"
+    count=$(echo "$orphans" | grep -c .)
+    echo "($count)"
+    cleanup_confirm_and_run "echo \"\$orphans\" | xargs -o -r sudo pacman -Rns"
+}
+
+do_cleanup_aur_cache() {
+    echo "== $(t cleanup_aur_cache) =="
+    local cache_dir="$HOME/.cache/$AUR_HELPER"
+    if ! dir_has_content "$cache_dir"; then
+        printf '%s\n' "$(t cleanup_nothing)"
+        return 0
+    fi
+    local size
+    size=$(du -sh "$cache_dir" 2>/dev/null | cut -f1)
+    echo "$cache_dir: $size"
+    cleanup_confirm_and_run '"$AUR_HELPER" -Sc --noconfirm'
+}
+
+do_cleanup_flatpak_unused() {
+    echo "== $(t cleanup_flatpak_unused) =="
+    local preview
+    preview=$(flatpak uninstall --unused --assumeno 2>&1 || true)
+    if [[ -z "$preview" ]]; then
+        printf '%s\n' "$(t cleanup_nothing)"
+        return 0
+    fi
+    echo "$preview"
+    cleanup_confirm_and_run 'flatpak uninstall --unused -y'
+}
+
+do_cleanup_npm_cache() {
+    echo "== $(t cleanup_npm_cache) =="
+    local cache_dir
+    cache_dir=$(npm config get cache 2>/dev/null)
+    if [[ -z "$cache_dir" ]] || ! dir_has_content "$cache_dir"; then
+        printf '%s\n' "$(t cleanup_nothing)"
+        return 0
+    fi
+    local size
+    size=$(du -sh "$cache_dir" 2>/dev/null | cut -f1)
+    echo "$cache_dir: $size"
+    cleanup_confirm_and_run 'npm cache clean --force'
+}
+
+do_cleanup_pip_cache() {
+    echo "== $(t cleanup_pip_cache) =="
+    local cache_dir
+    cache_dir=$("$PIP_BIN" cache dir 2>/dev/null)
+    if [[ -z "$cache_dir" ]] || ! dir_has_content "$cache_dir"; then
+        printf '%s\n' "$(t cleanup_nothing)"
+        return 0
+    fi
+    "$PIP_BIN" cache info 2>/dev/null
+    cleanup_confirm_and_run '"$PIP_BIN" cache purge'
+}
+
+do_cleanup_cargo_cache() {
+    echo "== $(t cleanup_cargo_cache) =="
+    local cache_dir="$HOME/.cargo/registry"
+    if ! dir_has_content "$cache_dir"; then
+        printf '%s\n' "$(t cleanup_nothing)"
+        return 0
+    fi
+    local size
+    size=$(du -sh "$cache_dir" 2>/dev/null | cut -f1)
+    echo "$cache_dir: $size"
+    cleanup_confirm_and_run 'rm -rf "$HOME/.cargo/registry/cache" "$HOME/.cargo/registry/src"'
+}
+
+do_cleanup_go_cache() {
+    echo "== $(t cleanup_go_cache) =="
+    local cache_dir
+    cache_dir=$(go env GOCACHE 2>/dev/null)
+    if [[ -z "$cache_dir" ]] || ! dir_has_content "$cache_dir"; then
+        printf '%s\n' "$(t cleanup_nothing)"
+        return 0
+    fi
+    local size
+    size=$(du -sh "$cache_dir" 2>/dev/null | cut -f1)
+    echo "$cache_dir: $size"
+    cleanup_confirm_and_run 'go clean -cache'
 }
 
 # Навигация:
 #   - Esc в списке пакетов (любой из 5 источников)  -> назад к "Select a package source"
 #     (для запуска с флагом типа --installed возврата нет, там сразу выход)
 #   - Esc в меню действий (Install/Update/...)       -> назад к списку пакетов, с которого пришли
+#   - Esc в меню cleanup                             -> назад к "Select a package source"
+#     (для запуска с флагом --cleanup возврата нет, там сразу выход, как у остальных)
 #
 HELPER_SCRIPT=$(mktemp /tmp/pkgpick_helper.XXXXXX)
 cp "$SELF" "$HELPER_SCRIPT"
@@ -951,6 +1238,7 @@ while true; do  # внешний цикл: выбор источника
         if [[ -n "$HAS_FLATPAK" ]]; then
             SOURCE_LINES+="flatpak"$'\t'"$(t lbl_flatpak)"$'\n'
         fi
+        SOURCE_LINES+="__separator__"$'\t'""$'\n'
         SOURCE_LINES+="installed"$'\t'"$(t lbl_installed)$SYS_SUFFIX"$'\n'
         if [[ -n "$AUR_HELPER" ]]; then
             SOURCE_LINES+="aur-installed"$'\t'"$(t lbl_aur_installed)"$'\n'
@@ -958,28 +1246,132 @@ while true; do  # внешний цикл: выбор источника
         if [[ -n "$HAS_FLATPAK" ]]; then
             SOURCE_LINES+="flatpak-installed"$'\t'"$(t lbl_flatpak_installed)"$'\n'
         fi
-        if [[ -n "$HAS_NPM" ]]; then
-            SOURCE_LINES+="npm-global"$'\t'"$(t lbl_npm_global)"$'\n'
-        fi
-        if [[ -n "$HAS_PIP" ]]; then
-            SOURCE_LINES+="pip-global"$'\t'"$(t lbl_pip_global)"$'\n'
-        fi
-        if [[ -n "$HAS_CARGO" ]]; then
-            SOURCE_LINES+="cargo-installed"$'\t'"$(t lbl_cargo_installed)"$'\n'
-        fi
-        if [[ -n "$HAS_GO" ]]; then
-            SOURCE_LINES+="go-installed"$'\t'"$(t lbl_go_installed)"$'\n'
+        if [[ -n "$SHOW_FULL" ]]; then
+            if [[ -n "$HAS_NPM" ]]; then
+                SOURCE_LINES+="npm-global"$'\t'"$(t lbl_npm_global)"$'\n'
+            fi
+            if [[ -n "$HAS_PIP" ]]; then
+                SOURCE_LINES+="pip-global"$'\t'"$(t lbl_pip_global)"$'\n'
+            fi
+            if [[ -n "$HAS_CARGO" ]]; then
+                SOURCE_LINES+="cargo-installed"$'\t'"$(t lbl_cargo_installed)"$'\n'
+            fi
+            if [[ -n "$HAS_GO" ]]; then
+                SOURCE_LINES+="go-installed"$'\t'"$(t lbl_go_installed)"$'\n'
+            fi
+            if [[ -n "$HAS_PIPX" ]]; then
+                SOURCE_LINES+="pipx-installed"$'\t'"$(t lbl_pipx_installed)"$'\n'
+            fi
         fi
         SOURCE_LINES+="all-installed"$'\t'"$(t lbl_all_installed)"$'\n'
+        SOURCE_LINES+="__separator__"$'\t'""$'\n'
+        SOURCE_LINES+="cleanup"$'\t'"$(t lbl_cleanup)"$'\n'
+        SOURCE_LINES+="settings"$'\t'"$(t lbl_settings)"$'\n'
         MODE=$(printf '%s' "$SOURCE_LINES" | \
-            fzf --exact --height 100% --border --layout=reverse \
+            fzf --exact --height 100% --border --layout=reverse --no-input \
+                --bind "$NOSEARCH_NAV_BIND" \
                 --delimiter=$'\t' --with-nth=2 \
                 --prompt="$(t source_prompt)" \
                 --header="$(t select_source)" | \
             cut -f1) || true
+        [[ "$MODE" == "__separator__" ]] && continue
         [[ -z "$MODE" ]] && exit 0
     else
         MODE="$FLAG_MODE"
+    fi
+
+    if [[ "$MODE" == "cleanup" ]]; then
+        while true; do  # cleanup-меню: после каждого действия возвращается сюда же
+            clear
+            CLEANUP_ACTION_LINES=""
+            CLEANUP_ACTION_LINES+="pacman_cache"$'\t'"$(t cleanup_pacman_cache)"$'\n'
+            CLEANUP_ACTION_LINES+="orphans"$'\t'"$(t cleanup_orphans)"$'\n'
+            if [[ -n "$AUR_HELPER" ]]; then
+                CLEANUP_ACTION_LINES+="aur_cache"$'\t'"$(t cleanup_aur_cache)"$'\n'
+            fi
+            if [[ -n "$HAS_FLATPAK" ]]; then
+                CLEANUP_ACTION_LINES+="flatpak_unused"$'\t'"$(t cleanup_flatpak_unused)"$'\n'
+            fi
+            if [[ -n "$HAS_NPM" ]]; then
+                CLEANUP_ACTION_LINES+="npm_cache"$'\t'"$(t cleanup_npm_cache)"$'\n'
+            fi
+            if [[ -n "$HAS_PIP" ]]; then
+                CLEANUP_ACTION_LINES+="pip_cache"$'\t'"$(t cleanup_pip_cache)"$'\n'
+            fi
+            if [[ -n "$HAS_CARGO" ]]; then
+                CLEANUP_ACTION_LINES+="cargo_cache"$'\t'"$(t cleanup_cargo_cache)"$'\n'
+            fi
+            if [[ -n "$HAS_GO" ]]; then
+                CLEANUP_ACTION_LINES+="go_cache"$'\t'"$(t cleanup_go_cache)"$'\n'
+            fi
+
+            CLEANUP_ACTION=$(printf '%s' "$CLEANUP_ACTION_LINES" | \
+                fzf --exact --height 100% --border --layout=reverse --no-input \
+                    --bind "$NOSEARCH_NAV_BIND" \
+                    --delimiter=$'\t' --with-nth=2 \
+                    --prompt="$(t action_prompt)" \
+                    --header="$(t cleanup_header)" | \
+                cut -f1) || true
+
+            if [[ -z "$CLEANUP_ACTION" ]]; then
+                # Esc в меню cleanup
+                if [[ -n "$FLAG_MODE" ]]; then
+                    exit 0
+                else
+                    continue 2  # назад к выбору источника
+                fi
+            fi
+
+            clear
+            cleanup_rc=0
+            case "$CLEANUP_ACTION" in
+                pacman_cache)    do_cleanup_pacman_cache    || cleanup_rc=$? ;;
+                orphans)         do_cleanup_orphans         || cleanup_rc=$? ;;
+                aur_cache)       do_cleanup_aur_cache       || cleanup_rc=$? ;;
+                flatpak_unused)  do_cleanup_flatpak_unused  || cleanup_rc=$? ;;
+                npm_cache)       do_cleanup_npm_cache       || cleanup_rc=$? ;;
+                pip_cache)       do_cleanup_pip_cache       || cleanup_rc=$? ;;
+                cargo_cache)     do_cleanup_cargo_cache     || cleanup_rc=$? ;;
+                go_cache)        do_cleanup_go_cache        || cleanup_rc=$? ;;
+            esac
+            if [[ "$cleanup_rc" -eq 0 ]]; then
+                echo
+                press_enter_or_esc
+            fi
+        done
+    fi
+
+    if [[ "$MODE" == "settings" ]]; then
+        while true; do  # settings-меню: после каждого изменения возвращается сюда же
+            clear
+            SETTINGS_LINES=""
+            full_state="$(t settings_off)"
+            [[ "$SHOW_FULL" == "1" ]] && full_state="$(t settings_on)"
+            SETTINGS_LINES+="language"$'\t'"$(t settings_language): $(lang_display_name "$LANG_CHOICE")"$'\n'
+            SETTINGS_LINES+="toggle_full"$'\t'"$(t settings_full_sources): $full_state"$'\n'
+
+            SETTINGS_ACTION=$(printf '%s' "$SETTINGS_LINES" | \
+                fzf --exact --height 100% --border --layout=reverse --no-input \
+                    --bind "$NOSEARCH_NAV_BIND" \
+                    --delimiter=$'\t' --with-nth=2 \
+                    --prompt="$(t action_prompt)" \
+                    --header="$(t settings_header)" | \
+                cut -f1) || true
+
+            if [[ -z "$SETTINGS_ACTION" ]]; then
+                # Esc в меню settings
+                if [[ -n "$FLAG_MODE" ]]; then
+                    exit 0
+                else
+                    continue 2  # назад к выбору источника
+                fi
+            fi
+
+            case "$SETTINGS_ACTION" in
+                language)     settings_pick_language ;;
+                toggle_full)  toggle_full_sources ;;
+            esac
+        done
     fi
 
     while true; do  # внутренний цикл: список пакетов <-> меню действий
@@ -1029,10 +1421,10 @@ while true; do  # внешний цикл: выбор источника
                     fzf "${FZF_COMMON_OPTS[@]}" \
                         --preview "$HELPER_SCRIPT __fp_info \$(echo {} | cut -d' ' -f1) \"$META_FILE\"" \
                         --header "$("$HELPER_SCRIPT" __header_fp "$STATE_FILE")" \
-                        --bind "ctrl-n:reload($HELPER_SCRIPT __sort_fp name \"$META_FILE\" \"$STATE_FILE\")+transform-header($HELPER_SCRIPT __header_fp \"$STATE_FILE\")" \
-                        --bind "ctrl-s:reload($HELPER_SCRIPT __sort_fp size \"$META_FILE\" \"$STATE_FILE\")+transform-header($HELPER_SCRIPT __header_fp \"$STATE_FILE\")" \
-                        --bind "ctrl-e:reload($HELPER_SCRIPT __sort_fp explicit \"$META_FILE\" \"$STATE_FILE\")+transform-header($HELPER_SCRIPT __header_fp \"$STATE_FILE\")" \
-                        --bind "ctrl-d:reload($HELPER_SCRIPT __sort_fp dependency \"$META_FILE\" \"$STATE_FILE\")+transform-header($HELPER_SCRIPT __header_fp \"$STATE_FILE\")" | \
+                        --bind "ctrl-n:reload-sync($HELPER_SCRIPT __sort_fp name \"$META_FILE\" \"$STATE_FILE\")+transform-header($HELPER_SCRIPT __header_fp \"$STATE_FILE\")" \
+                        --bind "ctrl-s:reload-sync($HELPER_SCRIPT __sort_fp size \"$META_FILE\" \"$STATE_FILE\")+transform-header($HELPER_SCRIPT __header_fp \"$STATE_FILE\")" \
+                        --bind "ctrl-e:reload-sync($HELPER_SCRIPT __sort_fp explicit \"$META_FILE\" \"$STATE_FILE\")+transform-header($HELPER_SCRIPT __header_fp \"$STATE_FILE\")" \
+                        --bind "ctrl-d:reload-sync($HELPER_SCRIPT __sort_fp dependency \"$META_FILE\" \"$STATE_FILE\")+transform-header($HELPER_SCRIPT __header_fp \"$STATE_FILE\")" | \
                     awk '{print $1}') || true
                 ;;
             npm-global)
@@ -1059,11 +1451,11 @@ while true; do  # внешний цикл: выбор источника
                     fzf "${FZF_COMMON_OPTS[@]}" \
                         --preview 'pacman -Qi {}' \
                         --header "$("$HELPER_SCRIPT" __header "$STATE_FILE")" \
-                        --bind "ctrl-n:reload($HELPER_SCRIPT __sort name \"$META_FILE\" \"$STATE_FILE\")+transform-header($HELPER_SCRIPT __header \"$STATE_FILE\")" \
-                        --bind "ctrl-s:reload($HELPER_SCRIPT __sort size \"$META_FILE\" \"$STATE_FILE\")+transform-header($HELPER_SCRIPT __header \"$STATE_FILE\")" \
-                        --bind "ctrl-t:reload($HELPER_SCRIPT __sort date \"$META_FILE\" \"$STATE_FILE\")+transform-header($HELPER_SCRIPT __header \"$STATE_FILE\")" \
-                        --bind "ctrl-e:reload($HELPER_SCRIPT __sort explicit \"$META_FILE\" \"$STATE_FILE\")+transform-header($HELPER_SCRIPT __header \"$STATE_FILE\")" \
-                        --bind "ctrl-d:reload($HELPER_SCRIPT __sort dependency \"$META_FILE\" \"$STATE_FILE\")+transform-header($HELPER_SCRIPT __header \"$STATE_FILE\")") || true
+                        --bind "ctrl-n:reload-sync($HELPER_SCRIPT __sort name \"$META_FILE\" \"$STATE_FILE\")+transform-header($HELPER_SCRIPT __header \"$STATE_FILE\")" \
+                        --bind "ctrl-s:reload-sync($HELPER_SCRIPT __sort size \"$META_FILE\" \"$STATE_FILE\")+transform-header($HELPER_SCRIPT __header \"$STATE_FILE\")" \
+                        --bind "ctrl-t:reload-sync($HELPER_SCRIPT __sort date \"$META_FILE\" \"$STATE_FILE\")+transform-header($HELPER_SCRIPT __header \"$STATE_FILE\")" \
+                        --bind "ctrl-e:reload-sync($HELPER_SCRIPT __sort explicit \"$META_FILE\" \"$STATE_FILE\")+transform-header($HELPER_SCRIPT __header \"$STATE_FILE\")" \
+                        --bind "ctrl-d:reload-sync($HELPER_SCRIPT __sort dependency \"$META_FILE\" \"$STATE_FILE\")+transform-header($HELPER_SCRIPT __header \"$STATE_FILE\")") || true
                 ;;
             pip-global)
                 SELECTED=$("$PIP_BIN" list --format=freeze 2>/dev/null | \
@@ -1086,6 +1478,14 @@ while true; do  # внешний цикл: выбор источника
                     sort | \
                     fzf "${FZF_COMMON_OPTS[@]}" \
                         --preview "$HELPER_SCRIPT __go_info \"$GO_BIN_DIR\" {}") || true
+                ;;
+            pipx-installed)
+                SELECTED=$(pipx list --short 2>/dev/null | \
+                    awk '{print $1, $2}' | \
+                    sort | \
+                    fzf "${FZF_COMMON_OPTS[@]}" \
+                        --preview "$HELPER_SCRIPT __pipx_info \$(echo {} | cut -d' ' -f1)" | \
+                    awk '{print $1}') || true
                 ;;
             all-installed)
                 META_FILE=$(build_meta_all_installed)
@@ -1132,7 +1532,7 @@ while true; do  # внешний цикл: выбор источника
         echo
 
         ACTION_LINES=""
-        if [[ "$MODE" == "installed" || "$MODE" == "aur-installed" || "$MODE" == "flatpak-installed" || "$MODE" == "npm-global" || "$MODE" == "pip-global" || "$MODE" == "cargo-installed" || "$MODE" == "go-installed" || "$MODE" == "all-installed" ]]; then
+        if [[ "$MODE" == "installed" || "$MODE" == "aur-installed" || "$MODE" == "flatpak-installed" || "$MODE" == "npm-global" || "$MODE" == "pip-global" || "$MODE" == "cargo-installed" || "$MODE" == "go-installed" || "$MODE" == "pipx-installed" || "$MODE" == "all-installed" ]]; then
             ACTION_LINES+="update"$'\t'"$(t act_update)"$'\n'
             ACTION_LINES+="remove"$'\t'"$(t act_remove)"$'\n'
             ACTION_LINES+="info"$'\t'"$(t act_info)"$'\n'
@@ -1154,6 +1554,7 @@ while true; do  # внешний цикл: выбор источника
                     pip-global)         UPDATE_ALL_LABEL_KEY="act_update_all_pip" ;;
                     cargo-installed)    UPDATE_ALL_LABEL_KEY="act_update_all_cargo" ;;
                     go-installed)       UPDATE_ALL_LABEL_KEY="act_update_all_go" ;;
+                    pipx-installed)     UPDATE_ALL_LABEL_KEY="act_update_all_pipx" ;;
                 esac
                 ACTION_LINES+="update_all"$'\t'"$(t "$UPDATE_ALL_LABEL_KEY")$UPDATE_ALL_LABEL_SUFFIX"$'\n'
             fi
@@ -1163,7 +1564,8 @@ while true; do  # внешний цикл: выбор источника
         fi
 
         ACTION=$(printf '%s' "$ACTION_LINES" | \
-            fzf --exact --height 100% --border --layout=reverse \
+            fzf --exact --height 100% --border --layout=reverse --no-input \
+                --bind "$NOSEARCH_NAV_BIND" \
                 --delimiter=$'\t' --with-nth=2 \
                 --prompt="$(t action_prompt)" \
                 --header="$(t action_header)" | \
@@ -1208,6 +1610,7 @@ while true; do  # внешний цикл: выбор источника
                                 modpath=$("$SELF" __go_modpath "$GO_BIN_DIR" "$id")
                                 [[ -n "$modpath" ]] && go install "${modpath}@latest"
                                 ;;
+                            pipx) pipx upgrade "$id" ;;
                         esac
                     done <<< "$SELECTED"
                 elif [[ "$MODE" == "flatpak-installed" ]]; then
@@ -1224,6 +1627,8 @@ while true; do  # внешний цикл: выбор источника
                         modpath=$("$SELF" __go_modpath "$GO_BIN_DIR" "$bin")
                         [[ -n "$modpath" ]] && go install "${modpath}@latest"
                     done
+                elif [[ "$MODE" == "pipx-installed" ]]; then
+                    echo "$SELECTED" | xargs -o -r -n1 pipx upgrade
                 elif [[ -n "$AUR_HELPER" ]]; then
                     echo "$SELECTED" | xargs -o -r "$AUR_HELPER" -S
                 else
@@ -1259,6 +1664,9 @@ while true; do  # внешний цикл: выбор источника
                     aur-installed)
                         "$AUR_HELPER" -Syu
                         ;;
+                    pipx-installed)
+                        pipx upgrade-all
+                        ;;
                     installed)
                         if [[ -n "$AUR_HELPER" ]]; then
                             "$AUR_HELPER" -Syu
@@ -1274,7 +1682,7 @@ while true; do  # внешний цикл: выбор источника
             remove)
                 read -r -p "$(t remove_confirm) $SELECTED_COUNT $(t remove_confirm_suffix) " confirm
                 case "$confirm" in
-                    y|Y|yes|Yes|д|Д|да|Да)
+                    ""|y|Y|yes|Yes|д|Д|да|Да)
                         if [[ "$MODE" == "all-installed" ]]; then
                             while IFS= read -r token; do
                                 [[ -z "$token" ]] && continue
@@ -1288,6 +1696,7 @@ while true; do  # внешний цикл: выбор источника
                                     pip) "$PIP_BIN" uninstall -y "$id" ;;
                                     cargo) cargo uninstall "$id" ;;
                                     go) rm -f "$GO_BIN_DIR/$id" ;;
+                                    pipx) pipx uninstall "$id" ;;
                                 esac
                             done <<< "$SELECTED"
                         elif [[ "$MODE" == "flatpak-installed" ]]; then
@@ -1303,6 +1712,8 @@ while true; do  # внешний цикл: выбор источника
                                 [[ -z "$bin" ]] && continue
                                 rm -f "$GO_BIN_DIR/$bin"
                             done
+                        elif [[ "$MODE" == "pipx-installed" ]]; then
+                            echo "$SELECTED" | xargs -o -r -n1 pipx uninstall
                         elif [[ -n "$AUR_HELPER" ]]; then
                             echo "$SELECTED" | xargs -o -r "$AUR_HELPER" -Rns
                         else
@@ -1327,6 +1738,7 @@ while true; do  # внешний цикл: выбор источника
                             pip)        "$PIP_BIN" show "$id" 2>/dev/null ;;
                             cargo)      "$SELF" __cargo_info "$id" ;;
                             go)         "$SELF" __go_info "$GO_BIN_DIR" "$id" ;;
+                            pipx)       "$SELF" __pipx_info "$id" ;;
                         esac
                     else
                         pkg="$entry"
@@ -1345,6 +1757,8 @@ while true; do  # внешний цикл: выбор источника
                             "$SELF" __cargo_info "$pkg"
                         elif [[ "$MODE" == "go-installed" ]]; then
                             "$SELF" __go_info "$GO_BIN_DIR" "$pkg"
+                        elif [[ "$MODE" == "pipx-installed" ]]; then
+                            "$SELF" __pipx_info "$pkg"
                         elif [[ -n "$AUR_HELPER" ]]; then
                             "$AUR_HELPER" -Si "$pkg" 2>/dev/null || "$AUR_HELPER" -Qi "$pkg" 2>/dev/null
                         else
@@ -1353,6 +1767,7 @@ while true; do  # внешний цикл: выбор источника
                     fi
                     echo
                 done <<< "$SELECTED"
+                press_enter_or_esc
                 ;;
             *)
                 echo "$(t invalid_action) $ACTION" >&2
