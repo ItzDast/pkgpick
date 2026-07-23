@@ -8,6 +8,8 @@ command -v fzf >/dev/null 2>&1 || { echo "fzf not found in PATH" >&2; exit 1; }
 CONFIG_DIR="$HOME/.config/pkgpick"
 CONFIG_FILE="$CONFIG_DIR/lang"
 CONFIG_FULL_FILE="$CONFIG_DIR/full_sources"
+CONFIG_UPDATE_COLOR_FILE="$CONFIG_DIR/update_color"
+CONFIG_NOTIFY_FILE="$CONFIG_DIR/notifications"
 
 # Общие бинды для меню без поиска (--no-input): раз печатать в fzf нельзя,
 # стрелки и vim h/j/k/l свободны — не конфликтуют с редактированием строки
@@ -31,13 +33,37 @@ declare -A EN=(
     [lbl_go_installed]="Installed go packages"
     [lbl_all_installed]="All installed packages (everywhere)"
     [lbl_pipx_installed]="Installed pipx packages"
-    [lbl_cleanup]="Cleanup (caches, orphans, unused files)"
+    [lbl_cleanup]="Cleanup (caches, orphaned packages, unused files)"
+    [lbl_update]="Update all packages (pacman)"
+    [lbl_stats]="Statistics"
+    [stats_packages]="Packages (pacman + AUR)"
+    [stats_pacman]="Official packages"
+    [stats_aur]="AUR packages"
+    [stats_flatpak]="Flatpak packages"
+    [stats_npm]="Global npm packages"
+    [stats_pip]="pip packages"
+    [stats_cargo]="Cargo packages"
+    [stats_go]="Go binaries"
+    [stats_pipx]="pipx packages"
     [lbl_settings]="Settings"
     [settings_header]="Settings"
     [settings_language]="Language"
     [settings_full_sources]="Show all sources (npm/pip/cargo/go/pipx)"
     [settings_on]="ON"
     [settings_off]="OFF"
+    [settings_update_color]="Update screen color"
+    [settings_notifications]="Desktop notifications"
+    [notifications_on]="ON"
+    [notifications_off]="OFF"
+    [notify_installed]="Installed:"
+    [notify_updated]="Updated:"
+    [notify_removed]="Removed:"
+    [notify_update_all]="Updated all packages:"
+    [notifications_enabled_msg]="Notifications enabled"
+    [notify_missing]="Desktop notifications need libnotify. Install libnotify to enable them."
+    [notify_cleanup]="Cleanup completed"
+    [update_header]="Updating all packages"
+    [update_failed]="Update command failed."
     [sort_prefix]="Sort:"
     [sort_name]="Name"
     [sort_size]="Size"
@@ -110,13 +136,37 @@ declare -A RU=(
     [lbl_go_installed]="Установленные go-пакеты"
     [lbl_all_installed]="Все установленные пакеты (везде)"
     [lbl_pipx_installed]="Установленные pipx-пакеты"
-    [lbl_cleanup]="Очистка (кеши, orphan-пакеты, неиспользуемое)"
+    [lbl_cleanup]="Очистка (кеши, пакеты-сироты, неиспользуемое)"
+    [lbl_update]="Обновить все пакеты (pacman)"
+    [lbl_stats]="Статистика"
+    [stats_packages]="Пакеты (pacman + AUR)"
+    [stats_pacman]="Официальные пакеты"
+    [stats_aur]="AUR-пакеты"
+    [stats_flatpak]="Flatpak-пакеты"
+    [stats_npm]="Глобальные npm-пакеты"
+    [stats_pip]="pip-пакеты"
+    [stats_cargo]="Cargo-пакеты"
+    [stats_go]="Go-бинарники"
+    [stats_pipx]="pipx-пакеты"
     [lbl_settings]="Настройки"
     [settings_header]="Настройки"
     [settings_language]="Язык"
     [settings_full_sources]="Показывать все источники (npm/pip/cargo/go/pipx)"
     [settings_on]="ВКЛ"
     [settings_off]="ВЫКЛ"
+    [settings_update_color]="Цвет экрана обновления"
+    [settings_notifications]="Уведомления рабочего стола"
+    [notifications_on]="ВКЛ"
+    [notifications_off]="ВЫКЛ"
+    [notify_installed]="Установлено:"
+    [notify_updated]="Обновлено:"
+    [notify_removed]="Удалено:"
+    [notify_update_all]="Обновлены все пакеты:"
+    [notifications_enabled_msg]="Уведомления включены"
+    [notify_missing]="Для уведомлений нужен libnotify. Установи libnotify, чтобы они работали."
+    [notify_cleanup]="Очистка завершена"
+    [update_header]="Обновление всех пакетов"
+    [update_failed]="Команда обновления завершилась с ошибкой."
     [sort_prefix]="Сортировка:"
     [sort_name]="Имя"
     [sort_size]="Размер"
@@ -517,7 +567,14 @@ cat <<EOF
   --go-installed      Установленные через 'go install' бинарники (GOBIN/GOPATH/bin)
   --pipx-installed    Установленные через pipx пакеты
   --all-installed     Все установленные пакеты сразу (pacman/AUR + flatpak + npm + pip + cargo + go + pipx)
-  --cleanup           Меню очистки: кеши пакетных менеджеров, orphan-пакеты, unused flatpak
+  --cleanup           Меню очистки: кеши, пакеты-сироты и неиспользуемые Flatpak-runtime
+  --clean             Короткий алиас для --cleanup
+  --update            Обновить pacman и AUR
+  --update-pacman     Обновить только pacman
+  --update-aur        Обновить только AUR
+  --stats             Показать статистику доступных источников
+  --stats-pacman      Статистика установленных официальных пакетов
+  --stats-aur         Статистика установленных AUR-пакетов
   --full              Показать npm/pip/cargo/go/pipx в меню один раз, не сохраняя (см. Настройки)
   --lang en|ru        Сменить язык интерфейса НАВСЕГДА (сохраняется в конфиг)
                       и продолжить с этим языком в текущем запуске
@@ -591,6 +648,13 @@ Language config file: $CONFIG_FILE
   --pipx-installed    Packages installed via pipx
   --all-installed     Every installed package at once (pacman/AUR + flatpak + npm + pip + cargo + go + pipx)
   --cleanup           Cleanup menu: package manager caches, orphaned packages, unused flatpak runtimes
+  --clean             Short alias for --cleanup
+  --update            Update pacman and AUR
+  --update-pacman     Update pacman only
+  --update-aur        Update AUR only
+  --stats             Show statistics for available sources
+  --stats-pacman      Statistics for installed official packages
+  --stats-aur         Statistics for installed AUR packages
   --full              Show npm/pip/cargo/go/pipx in the menu for this run only, without saving (see Settings)
   --lang en|ru        Change UI language PERMANENTLY (saved to config)
                       and continue this run in that language
@@ -666,8 +730,17 @@ if [[ -f "$CONFIG_FULL_FILE" && "$(cat "$CONFIG_FULL_FILE")" == "1" ]]; then
     SHOW_FULL="1"
 fi
 
+UPDATE_COLOR="blue"
+if [[ -f "$CONFIG_UPDATE_COLOR_FILE" ]]; then
+    UPDATE_COLOR=$(cat "$CONFIG_UPDATE_COLOR_FILE")
+fi
+
+NOTIFICATIONS_ENABLED=""
+[[ -f "$CONFIG_NOTIFY_FILE" && "$(cat "$CONFIG_NOTIFY_FILE")" == "1" ]] && NOTIFICATIONS_ENABLED="1"
+
 # ---- parse CLI arguments ----
 MODE=""
+STATS_SCOPE="all"
 LANG_FLAG=""
 FULL_FLAG=""
 HELP_REQUESTED=0
@@ -699,7 +772,13 @@ while [[ $# -gt 0 ]]; do
         --go-installed)        MODE="go-installed" ;;
         --all-installed)       MODE="all-installed" ;;
         --pipx-installed)      MODE="pipx-installed" ;;
-        --cleanup)              MODE="cleanup" ;;
+        --cleanup|--clean)      MODE="cleanup" ;;
+        --update)               MODE="update" ;;
+        --update-pacman)        MODE="update-pacman" ;;
+        --update-aur)           MODE="update-aur" ;;
+        --stats)                MODE="stats"; STATS_SCOPE="all" ;;
+        --stats-pacman)         MODE="stats"; STATS_SCOPE="pacman" ;;
+        --stats-aur)            MODE="stats"; STATS_SCOPE="aur" ;;
         --full)                 FULL_FLAG="1" ;;
         -h|--help)            HELP_REQUESTED=1 ;;
         *)
@@ -727,7 +806,7 @@ elif [[ "$LANG_CHOICE" != "en" && "$LANG_CHOICE" != "ru" ]]; then
             --bind "$NOSEARCH_NAV_BIND" \
             --delimiter=$'\t' --with-nth=2 \
             --prompt="Language / Язык> " \
-            --header="Choose your language / Выберите язык" | \
+            --ansi --header="$(update_color_value)$(banner_text language)"$'\033[0m' | \
         cut -f1) || true
     [[ -z "$LANG_CHOICE" ]] && LANG_CHOICE="en"
     mkdir -p "$CONFIG_DIR"
@@ -746,7 +825,7 @@ elif command -v paru >/dev/null 2>&1; then
     AUR_HELPER="paru"
 fi
 
-if [[ -z "$AUR_HELPER" && ( "$MODE" == "aur" || "$MODE" == "all" || "$MODE" == "aur-installed" ) ]]; then
+if [[ -z "$AUR_HELPER" && ( "$MODE" == "aur" || "$MODE" == "all" || "$MODE" == "aur-installed" || "$MODE" == "update-aur" ) ]]; then
     printf '%s\n' "$(t aur_helper_missing)" >&2
     exit 1
 fi
@@ -1057,6 +1136,19 @@ lang_display_name() {
     esac
 }
 
+notify_event() {
+    [[ "$NOTIFICATIONS_ENABLED" == "1" ]] || return 0
+    command -v notify-send >/dev/null 2>&1 || return 0
+    local icon="$PWD/pkgnc.svg"
+    [[ -f "$icon" ]] || icon="$(dirname "$SELF")/pkgnc.svg"
+    [[ -f "$icon" ]] || icon="/usr/share/icons/hicolor/scalable/apps/pkgpick.svg"
+    if [[ -f "$icon" ]]; then
+        notify-send -i "$icon" "PkgPick" "$1" >/dev/null 2>&1 || true
+    else
+        notify-send "PkgPick" "$1" >/dev/null 2>&1 || true
+    fi
+}
+
 # Same picker as the startup one, but on Esc it leaves the current language
 # untouched instead of defaulting to English — startup and settings need
 # different "nothing chosen" behavior, so this isn't shared with the block above.
@@ -1067,13 +1159,169 @@ settings_pick_language() {
             --bind "$NOSEARCH_NAV_BIND" \
             --delimiter=$'\t' --with-nth=2 \
             --prompt="Language / Язык> " \
-            --header="Choose your language / Выберите язык" | \
+            --ansi --header="$(update_color_value)$(banner_text language)"$'\033[0m' | \
         cut -f1) || true
     if [[ -n "$choice" ]]; then
         LANG_CHOICE="$choice"
         mkdir -p "$CONFIG_DIR"
         echo "$LANG_CHOICE" > "$CONFIG_FILE"
     fi
+}
+
+update_color_value() {
+    local value="${UPDATE_COLOR:-blue}" r g b
+    if [[ "$value" =~ ^#[0-9a-fA-F]{6}$ ]]; then
+        r=$((16#${value:1:2})); g=$((16#${value:3:2})); b=$((16#${value:5:2}))
+        printf '\033[38;2;%d;%d;%dm' "$r" "$g" "$b"
+    elif [[ "$value" =~ ^[0-9]{1,3}$ ]] && (( value >= 0 && value <= 255 )); then
+        printf '\033[38;5;%sm' "$value"
+    else
+        printf '\033[34m'
+    fi
+}
+
+banner_text() {
+    case "$1" in
+        main)
+            cat <<'PKGPICK_BANNER'
+ ___ _        ___ _    _   
+| _ \ |____ _| _ (_)__| |__
+|  _/ / / _` |  _/ / _| / /
+|_| |_\_\__, |_| |_\__|_\_\
+        |___/              
+        
+PKGPICK_BANNER
+            ;;
+        stats)
+            cat <<'PKGSTATS_BANNER'
+ ___ _        ___ _        _      
+| _ \ |____ _/ __| |_ __ _| |_ ___
+|  _/ / / _` \__ \  _/ _` |  _(_-<
+|_| |_\_\__, |___/\__\__,_|\__/__/
+        |___/                     
+PKGSTATS_BANNER
+            ;;
+        update)
+            cat <<'UPDATE_BANNER'
+               _      _       
+ _  _ _ __  __| |__ _| |_ ___ 
+| || | '_ \/ _` / _` |  _/ -_)
+ \_,_| .__/\__,_\__,_|\__\___|
+     |_|                      
+UPDATE_BANNER
+            ;;
+        clean)
+            cat <<'PKGCLEAN_BANNER'
+ ___ _         ___ _               
+| _ \ |____ _ / __| |___ __ _ _ _  
+|  _/ / / _` | (__| / -_) _` | ' \ 
+|_| |_\_\__, |\___|_\___\__,_|_||_|
+        |___/                      
+        
+PKGCLEAN_BANNER
+            ;;
+        settings)
+            cat <<'SETTINGS_BANNER'
+         _   _   _              
+ ___ ___| |_| |_(_)___  __ _ ___
+(_-</ -_)  _|  _| |   \/ _` (_-<
+/__/\___|\__|\__|_|_||_\__, /__/ 
+                       |___/    
+SETTINGS_BANNER
+            ;;
+        language)
+            cat <<'LANGUAGE_BANNER'
+ _                                    
+| |__ _ ___  __ _ _  _ __ _ __ _ ___ 
+| / _` | , \/ _` | || / _` / _` / -_)
+|_\__,_|_|_|\__, |\_,_\__,_\__, \___|
+            |___/          |___/     
+LANGUAGE_BANNER
+            ;;
+        color)
+            cat <<'COLOR_BANNER'
+        _         
+ __ ___| |___ _ _ 
+/ _/ _ \ / _ \ '_|
+\__\___/_\___/_|  
+                  
+COLOR_BANNER
+            ;;
+    esac
+}
+
+print_centered_banner() {
+    local cols line pad color reset
+    cols=$(tput cols 2>/dev/null || echo 80)
+    color="$(update_color_value)"
+    reset=$'\033[0m'
+    printf '%b' "$color"
+    while IFS= read -r line; do
+        pad=$(( (cols - ${#line}) / 2 )); (( pad < 0 )) && pad=0
+        printf '%*s%s\n' "$pad" '' "$line"
+    done < <(banner_text "$1")
+    printf '%b' "$reset"
+}
+
+count_lines() { awk 'NF { n++ } END { print n + 0 }'; }
+
+print_stat_line() {
+    local label="$1" value="$2" cols pad color reset
+    cols=$(tput cols 2>/dev/null || echo 80)
+    color="$(update_color_value)"; reset=$'\033[0m'
+    pad=$(( (cols - ${#label} - ${#value} - 2) / 2 )); (( pad < 0 )) && pad=0
+    printf '%*s%s: %b%s%b\n' "$pad" '' "$label" "$color" "$value" "$reset"
+}
+
+statistics_screen() {
+    local pacman_count aur_count
+    clear
+    print_centered_banner stats
+    echo
+    pacman_count=$(pacman -Qnq 2>/dev/null | count_lines)
+    aur_count=$(pacman -Qmq 2>/dev/null | count_lines)
+    [[ "$STATS_SCOPE" == "all" ]] && print_stat_line "$(t stats_packages)" "$((pacman_count + aur_count))"
+    [[ "$STATS_SCOPE" == "pacman" ]] && print_stat_line "$(t stats_pacman)" "$pacman_count"
+    [[ "$STATS_SCOPE" == "all" || "$STATS_SCOPE" == "aur" ]] && [[ -n "$AUR_HELPER" ]] && print_stat_line "$(t stats_aur)" "$aur_count"
+    if [[ "$STATS_SCOPE" == "all" && -n "$SHOW_FULL" ]]; then
+        [[ -n "$HAS_NPM" ]] && print_stat_line "$(t stats_npm)" "$(npm list -g --depth=0 --parseable 2>/dev/null | tail -n +2 | count_lines)"
+        [[ -n "$HAS_PIP" ]] && print_stat_line "$(t stats_pip)" "$($PIP_BIN list --format=freeze 2>/dev/null | count_lines)"
+        [[ -n "$HAS_PIPX" ]] && print_stat_line "$(t stats_pipx)" "$(pipx list --short 2>/dev/null | count_lines)"
+        [[ -n "$HAS_GO" && -d "$GO_BIN_DIR" ]] && print_stat_line "$(t stats_go)" "$(find "$GO_BIN_DIR" -maxdepth 1 -type f -printf '%f\n' 2>/dev/null | count_lines)"
+        [[ -n "$HAS_CARGO" ]] && print_stat_line "$(t stats_cargo)" "$(cargo install --list 2>/dev/null | awk '/^[^ ]/ { n++ } END { print n + 0 }')"
+    fi
+    echo
+    press_enter_or_esc
+}
+
+settings_pick_update_color() {
+    local choice value
+    choice=$(printf 'ansi\tANSI color (0-255)\nhex\tHEX color (#RRGGBB)\n' | \
+        fzf --exact --height 100% --border --layout=reverse --no-input \
+            --bind "$NOSEARCH_NAV_BIND" --delimiter=$'\t' --with-nth=2 \
+            --prompt="Color / Цвет> " --ansi \
+            --header="$(update_color_value)$(banner_text color)"$'\033[0m' | cut -f1) || true
+    [[ -z "$choice" ]] && return 0
+    case "$choice" in
+        ansi)
+            read -r -p "ANSI code (0-255): " value
+            if [[ "$value" =~ ^[0-9]+$ ]] && (( value <= 255 )); then
+                UPDATE_COLOR="$value"
+            else
+                return 0
+            fi
+            ;;
+        hex)
+            read -r -p "HEX color (#RRGGBB): " value
+            if [[ "$value" =~ ^#[0-9a-fA-F]{6}$ ]]; then
+                UPDATE_COLOR="$value"
+            else
+                return 0
+            fi
+            ;;
+    esac
+    mkdir -p "$CONFIG_DIR"
+    printf '%s\n' "$UPDATE_COLOR" > "$CONFIG_UPDATE_COLOR_FILE"
 }
 
 toggle_full_sources() {
@@ -1084,6 +1332,58 @@ toggle_full_sources() {
     fi
     mkdir -p "$CONFIG_DIR"
     echo "${SHOW_FULL:-0}" > "$CONFIG_FULL_FILE"
+}
+
+toggle_notifications() {
+    if [[ "$NOTIFICATIONS_ENABLED" == "1" ]]; then
+        NOTIFICATIONS_ENABLED=""
+    else
+        NOTIFICATIONS_ENABLED="1"
+    fi
+    mkdir -p "$CONFIG_DIR"
+    printf '%s\n' "${NOTIFICATIONS_ENABLED:-0}" > "$CONFIG_NOTIFY_FILE"
+    if [[ "$NOTIFICATIONS_ENABLED" == "1" ]]; then
+        if command -v notify-send >/dev/null 2>&1; then
+            notify_event "$(t notifications_enabled_msg)"
+        else
+            printf '%s\n' "$(t notify_missing)" >&2
+        fi
+    fi
+}
+
+update_screen() {
+    local scope="${1:-all}" reset
+    reset=$'\033[0m'
+    clear
+    print_centered_banner update
+    local rc=0
+    if [[ "$scope" == "aur" ]]; then
+        if [[ -n "$AUR_HELPER" ]]; then
+            "$AUR_HELPER" -Syu || rc=$?
+        else
+            printf '%s\n' "$(t aur_helper_missing)"
+            rc=1
+        fi
+    elif [[ "$scope" == "pacman" ]]; then
+        sudo pacman -Syu || rc=$?
+    elif [[ -n "$AUR_HELPER" ]]; then
+        "$AUR_HELPER" -Syu || rc=$?
+    else
+        sudo pacman -Syu || rc=$?
+    fi
+    printf '%b\n' "$reset"
+    if (( rc != 0 )); then
+        printf '%s\n' "$(t update_failed)"
+    else
+        case "$scope" in
+            pacman) notify_event "$(t notify_update_all) pacman" ;;
+            aur)    notify_event "$(t notify_update_all) AUR" ;;
+            *)      notify_event "$(t notify_update_all) pacman + AUR" ;;
+        esac
+    fi
+    echo
+    press_enter_or_esc
+    return "$rc"
 }
 
 # ---- cleanup mode: каждая функция показывает детали, спрашивает [y/N], выполняет ----
@@ -1247,6 +1547,7 @@ while true; do  # внешний цикл: выбор источника
             SOURCE_LINES+="flatpak-installed"$'\t'"$(t lbl_flatpak_installed)"$'\n'
         fi
         if [[ -n "$SHOW_FULL" ]]; then
+            SOURCE_LINES+="__separator__"$'\t'""$'\n'
             if [[ -n "$HAS_NPM" ]]; then
                 SOURCE_LINES+="npm-global"$'\t'"$(t lbl_npm_global)"$'\n'
             fi
@@ -1265,14 +1566,21 @@ while true; do  # внешний цикл: выбор источника
         fi
         SOURCE_LINES+="all-installed"$'\t'"$(t lbl_all_installed)"$'\n'
         SOURCE_LINES+="__separator__"$'\t'""$'\n'
+        update_label="$(t lbl_update)"
+        [[ -n "$AUR_HELPER" ]] && update_label="$(t lbl_update | sed 's/(pacman)/(pacman + AUR)/')"
+        SOURCE_LINES+="update"$'\t'"$update_label"$'\n'
         SOURCE_LINES+="cleanup"$'\t'"$(t lbl_cleanup)"$'\n'
+        SOURCE_LINES+="stats"$'\t'"$(t lbl_stats)"$'\n'
         SOURCE_LINES+="settings"$'\t'"$(t lbl_settings)"$'\n'
+        MAIN_HEADER="$(update_color_value)$(banner_text main)"$'\033[0m'
+        SOURCE_HEADER="$MAIN_HEADER"
         MODE=$(printf '%s' "$SOURCE_LINES" | \
             fzf --exact --height 100% --border --layout=reverse --no-input \
+                --ansi \
                 --bind "$NOSEARCH_NAV_BIND" \
                 --delimiter=$'\t' --with-nth=2 \
                 --prompt="$(t source_prompt)" \
-                --header="$(t select_source)" | \
+                --header="$SOURCE_HEADER" | \
             cut -f1) || true
         [[ "$MODE" == "__separator__" ]] && continue
         [[ -z "$MODE" ]] && exit 0
@@ -1305,12 +1613,14 @@ while true; do  # внешний цикл: выбор источника
                 CLEANUP_ACTION_LINES+="go_cache"$'\t'"$(t cleanup_go_cache)"$'\n'
             fi
 
+            CLEAN_HEADER="$(update_color_value)$(banner_text clean)"$'\033[0m'
             CLEANUP_ACTION=$(printf '%s' "$CLEANUP_ACTION_LINES" | \
                 fzf --exact --height 100% --border --layout=reverse --no-input \
                     --bind "$NOSEARCH_NAV_BIND" \
                     --delimiter=$'\t' --with-nth=2 \
                     --prompt="$(t action_prompt)" \
-                    --header="$(t cleanup_header)" | \
+                    --ansi \
+                    --header="$CLEAN_HEADER" | \
                 cut -f1) || true
 
             if [[ -z "$CLEANUP_ACTION" ]]; then
@@ -1335,10 +1645,34 @@ while true; do  # внешний цикл: выбор источника
                 go_cache)        do_cleanup_go_cache        || cleanup_rc=$? ;;
             esac
             if [[ "$cleanup_rc" -eq 0 ]]; then
+                notify_event "$(t notify_cleanup)"
                 echo
                 press_enter_or_esc
             fi
         done
+    fi
+
+    if [[ "$MODE" == "update" || "$MODE" == "update-pacman" || "$MODE" == "update-aur" ]]; then
+        clear
+        case "$MODE" in
+            update-pacman) update_screen pacman || true ;;
+            update-aur)    update_screen aur || true ;;
+            *)             update_screen all || true ;;
+        esac
+        if [[ -n "$FLAG_MODE" ]]; then
+            exit 0
+        else
+            continue
+        fi
+    fi
+
+    if [[ "$MODE" == "stats" ]]; then
+        statistics_screen
+        if [[ -n "$FLAG_MODE" ]]; then
+            exit 0
+        else
+            continue
+        fi
     fi
 
     if [[ "$MODE" == "settings" ]]; then
@@ -1349,13 +1683,19 @@ while true; do  # внешний цикл: выбор источника
             [[ "$SHOW_FULL" == "1" ]] && full_state="$(t settings_on)"
             SETTINGS_LINES+="language"$'\t'"$(t settings_language): $(lang_display_name "$LANG_CHOICE")"$'\n'
             SETTINGS_LINES+="toggle_full"$'\t'"$(t settings_full_sources): $full_state"$'\n'
+            SETTINGS_LINES+="update_color"$'\t'"$(t settings_update_color): $UPDATE_COLOR"$'\n'
+            notify_state="$(t notifications_off)"
+            [[ "$NOTIFICATIONS_ENABLED" == "1" ]] && notify_state="$(t notifications_on)"
+            SETTINGS_LINES+="notifications"$'\t'"$(t settings_notifications): $notify_state"$'\n'
+            SETTINGS_HEADER="$(update_color_value)$(banner_text settings)"$'\033[0m'
 
             SETTINGS_ACTION=$(printf '%s' "$SETTINGS_LINES" | \
                 fzf --exact --height 100% --border --layout=reverse --no-input \
                     --bind "$NOSEARCH_NAV_BIND" \
                     --delimiter=$'\t' --with-nth=2 \
                     --prompt="$(t action_prompt)" \
-                    --header="$(t settings_header)" | \
+                    --ansi \
+                    --header="$SETTINGS_HEADER" | \
                 cut -f1) || true
 
             if [[ -z "$SETTINGS_ACTION" ]]; then
@@ -1370,6 +1710,8 @@ while true; do  # внешний цикл: выбор источника
             case "$SETTINGS_ACTION" in
                 language)     settings_pick_language ;;
                 toggle_full)  toggle_full_sources ;;
+                update_color) settings_pick_update_color ;;
+                notifications) toggle_notifications ;;
             esac
         done
     fi
@@ -1779,6 +2121,27 @@ while true; do  # внешний цикл: выбор источника
                 exit 1
                 ;;
         esac
+
+        if [[ "$ACTION" == "install" || "$ACTION" == "update" || "$ACTION" == "update_all" || "$ACTION" == "remove" ]]; then
+            if [[ "$ACTION" == "install" ]]; then
+                notify_event "$(t notify_installed) $SELECTED"
+            elif [[ "$ACTION" == "remove" ]]; then
+                notify_event "$(t notify_removed) $SELECTED"
+            elif [[ "$ACTION" == "update_all" ]]; then
+                case "$MODE" in
+                    installed)        notify_event "$(t notify_update_all) pacman" ;;
+                    aur-installed)    notify_event "$(t notify_update_all) AUR" ;;
+                    flatpak-installed) notify_event "$(t notify_update_all) Flatpak" ;;
+                    npm-global)       notify_event "$(t notify_update_all) npm" ;;
+                    pip-global)       notify_event "$(t notify_update_all) pip" ;;
+                    cargo-installed)  notify_event "$(t notify_update_all) cargo" ;;
+                    go-installed)     notify_event "$(t notify_update_all) go" ;;
+                    pipx-installed)   notify_event "$(t notify_update_all) pipx" ;;
+                esac
+            else
+                notify_event "$(t notify_updated) $SELECTED"
+            fi
+        fi
 
         exit 0
     done

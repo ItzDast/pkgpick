@@ -16,6 +16,7 @@ pkgpick lets you search, install, update, remove, and inspect packages from offi
 - Sort/filter installed lists live by name, size, install date, explicit/dependency
 - Vim-style navigation (`h`/`j`/`k`/`l`) in every search-free menu, alongside arrow keys
 - Pressing Enter on a yes/no confirmation defaults to "yes"
+- Optional desktop notifications (install/remove/update/cleanup), off by default, toggled in Settings — requires `libnotify`
 - English and Russian interface, switchable anytime from Settings
 - Lightweight, dependency-light, entirely terminal-based
 
